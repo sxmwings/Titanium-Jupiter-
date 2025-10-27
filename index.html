@@ -528,9 +528,9 @@ position: relative;
 background: var(--bg-card);
 border-radius: 20px;
 padding: 30px;
-max-width: 390px;
+max-width: 720px;
 width: 100%;
-max-height: 80vh;
+max-height: 90vh;
 overflow-y: auto;
 border: 1px solid var(--border);
 }
@@ -622,44 +622,17 @@ margin-bottom: 4px;
 font-size: 12px;
 color: var(--text-secondary);
 }
-.muscle-anatomy {
-display: grid;
-grid-template-columns: 1fr 1fr;
-gap: 16px;
-margin: 20px 0;
-}
-.muscle-anatomy-side {
-text-align: center;
-}
-.muscle-anatomy-title {
-font-size: 14px;
-font-weight: 600;
-margin-bottom: 12px;
-color: var(--text-secondary);
-}
-.muscle-anatomy-svg {
-width: 120px;
-height: 180px;
-margin: 0 auto;
-}
-.muscle-highlight {
-fill: rgba(245, 158, 11, 0.3);
-stroke: var(--muscle-primary);
-stroke-width: 1;
-transition: all 0.3s ease;
-}
-.muscle-highlight.secondary {
-fill: rgba(59, 130, 246, 0.2);
-stroke: var(--muscle-secondary);
-}
-.muscle-highlight.tertiary {
-fill: rgba(139, 92, 246, 0.15);
-stroke: var(--muscle-tertiary);
+.canvas-wrap {
+width: 100%;
+height: 380px;
+display:flex;
+align-items:center;
+justify-content:center;
 }
 </style>
 </head>
 <body>
-<div id="restTimer" class="rest-timer-fixed">
+<div id="restTimer" class="rest-timer-fixed" aria-hidden="true">
 <div class="timer-content">
 <div class="timer-circle">
 <svg width="80" height="80" viewBox="0 0 80 80">
@@ -672,7 +645,7 @@ stroke: var(--muscle-tertiary);
 <div id="nextExerciseName" class="timer-next">Repos</div>
 <div class="timer-label">Temps de repos</div>
 </div>
-<button id="skipTimerBtn" class="timer-skip">✕</button>
+<button id="skipTimerBtn" class="timer-skip" title="Ignorer le repos">✕</button>
 </div>
 </div>
 
@@ -723,539 +696,873 @@ stroke: var(--muscle-tertiary);
 </div>
 </div>
 
-<div id="modal" class="modal">
-<div class="modal-overlay"></div>
+<div id="modal" class="modal" aria-hidden="true">
+<div class="modal-overlay" id="modalOverlay"></div>
 <div class="modal-content" id="modalContent"></div>
 </div>
 
 <script>
-(function() {
-'use strict';
+/*
+  Version corrigée + statistiques graphiques (canvas).
+  Exécute tout après DOMContentLoaded pour éviter les problèmes sur iPhone/Safari.
+*/
 
-// BASE DE DONNÉES MUSCLES PAR EXERCICE
-const MUSCLE_MAPPING = {
-    "Trap Bar Deadlift": { 
-        primary: ["Quadriceps", "Fessiers", "Ischios"], 
-        secondary: ["Dos", "Abdominaux"],
-        tertiary: ["Mollets", "Avant-bras"]
+document.addEventListener('DOMContentLoaded', function() {
+  'use strict';
+
+  // --- DATA & DEFAULTS (conserve ton PROGRAM d'origine) ---
+  const MUSCLE_MAPPING = {
+    "Trap Bar Deadlift": { primary: ["Quadriceps", "Fessiers", "Ischios"], secondary: ["Dos", "Abdominaux"], tertiary: ["Mollets", "Avant-bras"] },
+    "Goblet Squat": { primary: ["Quadriceps", "Fessiers"], secondary: ["Ischios", "Abdominaux"], tertiary: ["Mollets"] },
+    "Lat Pulldown": { primary: ["Dos", "Grand dorsal"], secondary: ["Biceps", "Avant-bras"], tertiary: ["Épaules"] },
+    "Leg Press": { primary: ["Quadriceps", "Fessiers"], secondary: ["Ischios"], tertiary: ["Mollets"] },
+    "Landmine Press": { primary: ["Pectoraux", "Épaules"], secondary: ["Triceps"], tertiary: ["Abdominaux"] },
+    "Incline Curl": { primary: ["Biceps"], secondary: ["Avant-bras"], tertiary: [] },
+    "Reverse Curl": { primary: ["Avant-bras"], secondary: ["Biceps"], tertiary: [] },
+    "Dumbbell Press": { primary: ["Pectoraux"], secondary: ["Épaules", "Triceps"], tertiary: [] },
+    "Close-Grip Bench Press": { primary: ["Triceps", "Pectoraux"], secondary: ["Épaules"], tertiary: [] },
+    "Lateral Raises": { primary: ["Épaules"], secondary: ["Trapèzes"], tertiary: [] },
+    "Face Pull": { primary: ["Épaules postérieures", "Rhomboïdes"], secondary: ["Trapèzes"], tertiary: [] },
+    "Cable Curl": { primary: ["Biceps"], secondary: ["Avant-bras"], tertiary: [] },
+    "Rope Hammer Curl": { primary: ["Biceps", "Avant-bras"], secondary: [], tertiary: [] },
+    "Triceps Pushdown": { primary: ["Triceps"], secondary: [], tertiary: [] },
+    "Landmine Row": { primary: ["Dos", "Grand dorsal"], secondary: ["Biceps", "Avant-bras"], tertiary: ["Épaules"] },
+    "Leg Curl": { primary: ["Ischios"], secondary: ["Fessiers"], tertiary: ["Mollets"] },
+    "Leg Extension": { primary: ["Quadriceps"], secondary: [], tertiary: [] },
+    "Dumbbell Fly": { primary: ["Pectoraux"], secondary: ["Épaules"], tertiary: [] },
+    "EZ Bar Curl": { primary: ["Biceps"], secondary: ["Avant-bras"], tertiary: [] },
+    "Wrist Curl": { primary: ["Avant-bras"], secondary: [], tertiary: [] }
+  };
+
+  const PROGRAM = {
+    dimanche: {
+      key: 'dimanche',
+      title: "Dimanche - Dos + Jambes Lourdes",
+      exercises: [
+        { name: "Trap Bar Deadlift", sets: 4, reps: "6-8", rest: 150, weight: 75, type: "barre", tech: "Tempo 3-1-2" },
+        { name: "Goblet Squat", sets: 3, reps: "10", rest: 90, weight: 25, type: "haltères", tech: "Tempo 3-1-2" },
+        { name: "Lat Pulldown", sets: 3, reps: "10", rest: 90, weight: 60, type: "machine", tech: "Tempo 2-1-2" },
+        { name: "Leg Press", sets: 3, reps: "12", rest: 120, weight: 110, type: "machine", tech: "Tempo 2-1-2" },
+        { name: "Landmine Press", sets: 3, reps: "10", rest: 120, weight: 40, type: "barre", tech: "Standard" },
+        { name: "Incline Curl", sets: 2, reps: "12", rest: 75, weight: 14, type: "haltères", tech: "Tempo 2-1-2" },
+        { name: "Reverse Curl", sets: 2, reps: "15", rest: 75, weight: 8, type: "haltères", tech: "Tempo 3-1-2" }
+      ]
     },
-    "Goblet Squat": { 
-        primary: ["Quadriceps", "Fessiers"], 
-        secondary: ["Ischios", "Abdominaux"],
-        tertiary: ["Mollets"]
+    mardi: {
+      key: 'mardi',
+      title: "Mardi - Pecs + Épaules + Bras",
+      exercises: [
+        { name: "Dumbbell Press", sets: 3, reps: "10", rest: 120, weight: 22, type: "haltères", tech: "Tempo 2-1-2" },
+        { name: "Close-Grip Bench Press", sets: 3, reps: "10", rest: 90, weight: 70, type: "barre", tech: "Standard" },
+        { name: "Lateral Raises", sets: 3, reps: "15", rest: 60, weight: 8, type: "haltères", tech: "Tempo 2-1-2" },
+        { name: "Face Pull", sets: 3, reps: "15", rest: 60, weight: 20, type: "machine", tech: "Tempo 3-1-2" },
+        { name: "Cable Curl", sets: 3, reps: "12", rest: 75, weight: 25, type: "machine", tech: "Standard" },
+        { name: "Rope Hammer Curl", sets: 2, reps: "15", rest: 60, weight: 12, type: "machine", tech: "Standard" },
+        { name: "Triceps Pushdown", sets: 2, reps: "12", rest: 60, weight: 25, type: "machine", tech: "Standard" }
+      ]
     },
-    "Lat Pulldown": { 
-        primary: ["Dos", "Grand dorsal"], 
-        secondary: ["Biceps", "Avant-bras"],
-        tertiary: ["Épaules"]
-    },
-    "Leg Press": { 
-        primary: ["Quadriceps", "Fessiers"], 
-        secondary: ["Ischios"],
-        tertiary: ["Mollets"]
-    },
-    "Landmine Press": { 
-        primary: ["Pectoraux", "Épaules"], 
-        secondary: ["Triceps"],
-        tertiary: ["Abdominaux"]
-    },
-    "Incline Curl": { 
-        primary: ["Biceps"], 
-        secondary: ["Avant-bras"],
-        tertiary: []
-    },
-    "Reverse Curl": { 
-        primary: ["Avant-bras"], 
-        secondary: ["Biceps"],
-        tertiary: []
-    },
-    "Dumbbell Press": { 
-        primary: ["Pectoraux"], 
-        secondary: ["Épaules", "Triceps"],
-        tertiary: []
-    },
-    "Close-Grip Bench Press": { 
-        primary: ["Triceps", "Pectoraux"], 
-        secondary: ["Épaules"],
-        tertiary: []
-    },
-    "Lateral Raises": { 
-        primary: ["Épaules"], 
-        secondary: ["Trapèzes"],
-        tertiary: []
-    },
-    "Face Pull": { 
-        primary: ["Épaules postérieures", "Rhomboïdes"], 
-        secondary: ["Trapèzes"],
-        tertiary: []
-    },
-    "Cable Curl": { 
-        primary: ["Biceps"], 
-        secondary: ["Avant-bras"],
-        tertiary: []
-    },
-    "Rope Hammer Curl": { 
-        primary: ["Biceps", "Avant-bras"], 
-        secondary: [],
-        tertiary: []
-    },
-    "Triceps Pushdown": { 
-        primary: ["Triceps"], 
-        secondary: [],
-        tertiary: []
-    },
-    "Landmine Row": { 
-        primary: ["Dos", "Grand dorsal"], 
-        secondary: ["Biceps", "Avant-bras"],
-        tertiary: ["Épaules"]
-    },
-    "Leg Curl": { 
-        primary: ["Ischios"], 
-        secondary: ["Fessiers"],
-        tertiary: ["Mollets"]
-    },
-    "Leg Extension": { 
-        primary: ["Quadriceps"], 
-        secondary: [],
-        tertiary: []
-    },
-    "Dumbbell Fly": { 
-        primary: ["Pectoraux"], 
-        secondary: ["Épaules"],
-        tertiary: []
-    },
-    "EZ Bar Curl": { 
-        primary: ["Biceps"], 
-        secondary: ["Avant-bras"],
-        tertiary: []
-    },
-    "Wrist Curl": { 
-        primary: ["Avant-bras"], 
-        secondary: [],
-        tertiary: []
+    vendredi: {
+      key: 'vendredi',
+      title: "Vendredi - Dos + Jambes Légères + Bras",
+      exercises: [
+        { name: "Landmine Row", sets: 3, reps: "10", rest: 120, weight: 50, type: "barre", tech: "Tempo 2-1-2" },
+        { name: "Leg Curl", sets: 3, reps: "12", rest: 90, weight: 35, type: "machine", tech: "Tempo 3-1-2" },
+        { name: "Leg Extension", sets: 3, reps: "15", rest: 75, weight: 40, type: "machine", tech: "Standard" },
+        { name: "Dumbbell Fly", sets: 3, reps: "12", rest: 75, weight: 12, type: "haltères", tech: "Tempo 3-1-2" },
+        { name: "EZ Bar Curl", sets: 3, reps: "12", rest: 60, weight: 30, type: "barre", tech: "Standard" },
+        { name: "Wrist Curl", sets: 3, reps: "20", rest: 45, weight: 8, type: "barre", tech: "Standard" }
+      ]
     }
-};
+  };
 
-const PROGRAM = {
-dimanche: {
-key: 'dimanche',
-title: "Dimanche - Dos + Jambes Lourdes",
-exercises: [
-{ name: "Trap Bar Deadlift", sets: 4, reps: "6-8", rest: 150, weight: 75, type: "barre", tech: "Tempo 3-1-2" },
-{ name: "Goblet Squat", sets: 3, reps: "10", rest: 90, weight: 25, type: "haltères", tech: "Tempo 3-1-2" },
-{ name: "Lat Pulldown", sets: 3, reps: "10", rest: 90, weight: 60, type: "machine", tech: "Tempo 2-1-2" },
-{ name: "Leg Press", sets: 3, reps: "12", rest: 120, weight: 110, type: "machine", tech: "Tempo 2-1-2" },
-{ name: "Landmine Press", sets: 3, reps: "10", rest: 120, weight: 40, type: "barre", tech: "Standard" },
-{ name: "Incline Curl", sets: 2, reps: "12", rest: 75, weight: 14, type: "haltères", tech: "Tempo 2-1-2" },
-{ name: "Reverse Curl", sets: 2, reps: "15", rest: 75, weight: 8, type: "haltères", tech: "Tempo 3-1-2" }
-]
-},
-mardi: {
-key: 'mardi',
-title: "Mardi - Pecs + Épaules + Bras",
-exercises: [
-{ name: "Dumbbell Press", sets: 3, reps: "10", rest: 120, weight: 22, type: "haltères", tech: "Tempo 2-1-2" },
-{ name: "Close-Grip Bench Press", sets: 3, reps: "10", rest: 90, weight: 70, type: "barre", tech: "Standard" },
-{ name: "Lateral Raises", sets: 3, reps: "15", rest: 60, weight: 8, type: "haltères", tech: "Tempo 2-1-2" },
-{ name: "Face Pull", sets: 3, reps: "15", rest: 60, weight: 20, type: "machine", tech: "Tempo 3-1-2" },
-{ name: "Cable Curl", sets: 3, reps: "12", rest: 75, weight: 25, type: "machine", tech: "Standard" },
-{ name: "Rope Hammer Curl", sets: 2, reps: "15", rest: 60, weight: 12, type: "machine", tech: "Standard" },
-{ name: "Triceps Pushdown", sets: 2, reps: "12", rest: 60, weight: 25, type: "machine", tech: "Standard" }
-]
-},
-vendredi: {
-key: 'vendredi',
-title: "Vendredi - Dos + Jambes Légères + Bras",
-exercises: [
-{ name: "Landmine Row", sets: 3, reps: "10", rest: 120, weight: 50, type: "barre", tech: "Tempo 2-1-2" },
-{ name: "Leg Curl", sets: 3, reps: "12", rest: 90, weight: 35, type: "machine", tech: "Tempo 3-1-2" },
-{ name: "Leg Extension", sets: 3, reps: "15", rest: 75, weight: 40, type: "machine", tech: "Standard" },
-{ name: "Dumbbell Fly", sets: 3, reps: "12", rest: 75, weight: 12, type: "haltères", tech: "Tempo 3-1-2" },
-{ name: "EZ Bar Curl", sets: 3, reps: "12", rest: 60, weight: 30, type: "barre", tech: "Standard" },
-{ name: "Wrist Curl", sets: 3, reps: "20", rest: 45, weight: 8, type: "barre", tech: "Standard" }
-]
-}
-};
+  const STATE_KEY = 'hm51_v7';
+  const LAST_SESSION_KEY = 'hm51_last_session';
+  let state = null;
+  let currentSessionKey = null;
+  let timerInterval = null;
+  let timerRemainingSec = 0, timerTotalSec = 0;
 
-const STATE_KEY = 'hm51_v7';
-const LAST_SESSION_KEY = 'hm51_last_session';
-let state, currentSessionKey, timerInterval;
+  // --- state helpers ---
+  function defaultState() {
+    const weights = {};
+    Object.values(PROGRAM).forEach(s => {
+      s.exercises.forEach(e => { weights[e.name] = e.weight; });
+    });
+    return {
+      week: 1,
+      weights,
+      hist: {},
+      program: JSON.parse(JSON.stringify(PROGRAM)),
+      customExercises: []
+    };
+  }
 
-function defaultState() {
-const weights = {};
-Object.values(PROGRAM).forEach(function(s) {
-s.exercises.forEach(function(e) {
-weights[e.name] = e.weight;
+  function loadState() {
+    try {
+      const raw = localStorage.getItem(STATE_KEY);
+      if (raw) {
+        const loaded = JSON.parse(raw);
+        if (!loaded.customExercises) loaded.customExercises = [];
+        // ensure weights contains all exercises
+        Object.values(PROGRAM).forEach(s => {
+          s.exercises.forEach(e => {
+            if (!loaded.weights) loaded.weights = {};
+            if (typeof loaded.weights[e.name] === 'undefined') loaded.weights[e.name] = e.weight;
+          });
+        });
+        return loaded;
+      }
+    } catch (e) { console.error('loadState error', e); }
+    return defaultState();
+  }
+
+  function saveState() {
+    try { localStorage.setItem(STATE_KEY, JSON.stringify(state)); } catch (e) { console.error('saveState', e); }
+  }
+
+  // UI helpers
+  function showScreen(id) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    const s = document.getElementById(id);
+    if (s) s.classList.add('active');
+  }
+
+  function showQuickMsg(msg, color) {
+    const el = document.getElementById('quickMsg');
+    if (!el) return;
+    el.textContent = msg;
+    if (color) el.style.color = color; else el.style.color = '#10b981';
+    setTimeout(() => { el.textContent = 'Prêt.'; el.style.color = ''; }, 3000);
+  }
+
+  function getBlockInfo(week) {
+    if (week <= 5) return { name: 'Bloc 1 - Fondation', tech: 'Tempo contrôlé' };
+    if (week <= 11) return { name: 'Bloc 2 - Surcharge', tech: 'Rest-Pause' };
+    return { name: 'Bloc 3 - Intensification', tech: 'Drop-sets + Myo-reps' };
+  }
+
+  function getLastPerformance(exName) {
+    const hist = state.hist[exName];
+    if (!hist || hist.length === 0) return null;
+    return hist[hist.length - 1];
+  }
+
+  // RENDER header + program list
+  function renderHeader() {
+    const weekDisplay = document.getElementById('weekDisplay');
+    const blockName = document.getElementById('blockName');
+    if (weekDisplay) weekDisplay.textContent = state.week;
+    const block = getBlockInfo(state.week);
+    if (blockName) blockName.textContent = block.name;
+  }
+
+  function renderProgramList() {
+    const progList = document.getElementById('progList');
+    if (!progList) return;
+    progList.innerHTML = '';
+
+    // Quick start
+    const lastSession = localStorage.getItem(LAST_SESSION_KEY);
+    const quickBtn = document.createElement('button');
+    quickBtn.className = 'quick-session-btn';
+    quickBtn.innerHTML = '<div style="font-size:18px;font-weight:700;margin-bottom:8px">⚡ Reprise Rapide</div>' +
+      '<div style="font-size:14px;opacity:0.9">Dernière séance • 1 tap</div>';
+    quickBtn.addEventListener('click', function() {
+      if (lastSession && state.program[lastSession]) {
+        openSession(lastSession);
+        showQuickMsg('⚡ Séance reprise !');
+      } else {
+        showQuickMsg('📝 Aucune séance récente', '#f59e0b');
+      }
+    });
+    progList.appendChild(quickBtn);
+
+    Object.values(state.program).forEach(s => {
+      const btn = document.createElement('button');
+      btn.className = 'session-btn';
+      const exCount = s.exercises.length;
+      const totalSets = s.exercises.reduce((sum, ex) => sum + ex.sets, 0);
+      btn.innerHTML = '<div style="font-size:18px;font-weight:700;margin-bottom:8px">' + s.title + '</div>' +
+        '<div style="font-size:14px;opacity:0.9">' + exCount + ' exercices • ' + totalSets + ' séries</div>';
+      btn.addEventListener('click', () => openSession(s.key));
+      progList.appendChild(btn);
+    });
+  }
+
+  // session open
+  function openSession(key) {
+    if (!state.program[key]) { showQuickMsg('Session inconnue', '#ef4444'); return; }
+    currentSessionKey = key;
+    try { localStorage.setItem(LAST_SESSION_KEY, key); } catch (e) { console.error(e); }
+    showScreen('session');
+    const sessionTitle = document.getElementById('sessionTitle');
+    if (sessionTitle) sessionTitle.textContent = state.program[key].title;
+    const list = document.getElementById('exerciseList');
+    if (!list) return;
+    list.innerHTML = '';
+
+    state.program[key].exercises.forEach(ex => {
+      const w = state.weights[ex.name] || ex.weight;
+      const exId = ex.name.replace(/[^a-zA-Z0-9]/g, '');
+      const lastPerf = getLastPerformance(ex.name);
+      let perfBadge = '';
+      if (lastPerf) perfBadge = '<div style="font-size:13px;color:#10b981;margin-top:4px">📊 Dernier: ' + lastPerf.weight + 'kg × ' + lastPerf.reps + ' reps</div>';
+
+      const muscleData = MUSCLE_MAPPING[ex.name] || { primary: [], secondary: [], tertiary: [] };
+      let muscleBadge = '';
+      if (muscleData.primary.length > 0) {
+        muscleBadge = '<div class="muscle-groups">';
+        muscleData.primary.forEach(m => muscleBadge += '<span class="muscle-tag muscle-primary">' + m + '</span>');
+        muscleData.secondary.forEach(m => muscleBadge += '<span class="muscle-tag muscle-secondary">' + m + '</span>');
+        muscleData.tertiary.forEach(m => muscleBadge += '<span class="muscle-tag muscle-tertiary">' + m + '</span>');
+        muscleBadge += '</div>';
+      }
+
+      const card = document.createElement('div');
+      card.className = 'exercise-card';
+      card.innerHTML = '<div class="exercise-header" data-exid="' + exId + '">' +
+        '<div style="flex:1">' +
+        '<div class="exercise-name">' + ex.name + '</div>' +
+        '<div class="exercise-meta">' + ex.sets + ' séries × ' + ex.reps + ' reps • ' + ex.rest + 's repos • ' + w + 'kg</div>' +
+        muscleBadge +
+        perfBadge +
+        '</div>' +
+        '<div class="exercise-arrow" id="arrow-' + exId + '">▼</div>' +
+        '</div>' +
+        '<div class="exercise-details" id="details-' + exId + '"></div>';
+      list.appendChild(card);
+
+      // add click to header to toggle
+      const header = card.querySelector('.exercise-header');
+      if (header) header.addEventListener('click', () => toggleExerciseDetails(exId, ex));
+    });
+  }
+
+  // render details
+  function renderExerciseDetails(ex) {
+    const exId = ex.name.replace(/[^a-zA-Z0-9]/g, '');
+    const details = document.getElementById('details-' + exId);
+    if (!details) return;
+    const w = state.weights[ex.name] || ex.weight;
+    const lastPerf = getLastPerformance(ex.name);
+    let techBanner = ex.tech;
+    if (state.week > 5 && state.week <= 11) techBanner = ex.tech + ' + Rest-Pause (dernière série)';
+    else if (state.week > 11) techBanner = ex.tech + ' + Drop-sets + Myo-reps';
+
+    let perfMsg = '';
+    if (lastPerf) {
+      perfMsg = '<div style="background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.3);color:#10b981;padding:12px 16px;border-radius:10px;margin-bottom:16px;font-size:14px;font-weight:600">' +
+        '📊 Dernière fois : ' + lastPerf.weight + 'kg × ' + lastPerf.reps +
+        ' reps (Semaine ' + lastPerf.week + ')' +
+        '</div>';
+    } else {
+      perfMsg = '<div style="background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);color:var(--accent);padding:12px 16px;border-radius:10px;margin-bottom:16px;font-size:14px;font-weight:600">' +
+        '⭐ Première fois pour cet exercice !' +
+        '</div>';
+    }
+
+    const muscleData = MUSCLE_MAPPING[ex.name] || { primary: [], secondary: [], tertiary: [] };
+    let muscleSection = '';
+    if (muscleData.primary.length > 0) {
+      muscleSection = '<div style="margin:20px 0;padding:16px;background:var(--bg-card);border-radius:12px;border:1px solid var(--border)">' +
+        '<div style="font-weight:700;margin-bottom:12px;color:var(--accent)">💪 Muscles Sollicités</div>' +
+        '<div class="muscle-groups">';
+      muscleData.primary.forEach(m => muscleSection += '<span class="muscle-tag muscle-primary">⭐ ' + m + '</span>');
+      muscleData.secondary.forEach(m => muscleSection += '<span class="muscle-tag muscle-secondary">↗️ ' + m + '</span>');
+      muscleData.tertiary.forEach(m => muscleSection += '<span class="muscle-tag muscle-tertiary">↘️ ' + m + '</span>');
+      muscleSection += '</div></div>';
+    }
+
+    let setsHtml = '';
+    for (let i = 1; i <= ex.sets; i++) {
+      setsHtml += '<div class="set-row">' +
+        '<div class="set-label">Série ' + i + '</div>' +
+        '<div>' +
+        '<label class="input-label">KG</label>' +
+        '<input type="number" value="' + w + '" class="set-input w-' + exId + '-' + i + '" step="0.5" placeholder="Poids">' +
+        '</div>' +
+        '<div>' +
+        '<label class="input-label">REPS</label>' +
+        '<input type="number" value="' + (typeof ex.reps === 'number' ? ex.reps : (String(ex.reps).split('-')[0])) + '" class="set-input r-' + exId + '-' + i + '" placeholder="Reps">' +
+        '</div>' +
+        '<div>' +
+        '<input type="checkbox" id="s-' + i + '-' + exId + '" class="set-checkbox">' +
+        '<label for="s-' + i + '-' + exId + '"></label>' +
+        '</div>' +
+        '</div>';
+    }
+
+    details.innerHTML = '<div class="technique-banner">✨ ' + techBanner + '</div>' +
+      perfMsg +
+      muscleSection +
+      setsHtml +
+      '<div class="exercise-actions">' +
+      '<button class="btn-secondary" id="modify-' + exId + '">✏️ Modifier Poids</button>' +
+      '<button class="btn-save" id="save-' + exId + '">💾 Enregistrer & Valider</button>' +
+      '</div>';
+
+    // attach modify/save listeners
+    const modifyBtn = document.getElementById('modify-' + exId);
+    if (modifyBtn) modifyBtn.addEventListener('click', function() { modifyWeight(ex.name); });
+
+    const saveBtn = document.getElementById('save-' + exId);
+    if (saveBtn) saveBtn.addEventListener('click', function() { savePerf(ex.name); });
+
+    // checkboxes for timer
+    const checkboxes = details.querySelectorAll('.set-checkbox');
+    checkboxes.forEach((cb, idx) => {
+      cb.addEventListener('change', function() {
+        if (this.checked) {
+          if (navigator.vibrate) navigator.vibrate(50);
+          const isLast = idx === ex.sets - 1;
+          const nextText = isLast ? "Prochain exercice" : "Repos";
+          startTimer(ex.rest, nextText);
+        }
+      });
+    });
+  }
+
+  // toggle details
+  function toggleExerciseDetails(exId, exObj) {
+    const details = document.getElementById('details-' + exId);
+    const arrow = document.getElementById('arrow-' + exId);
+    if (!details) return;
+    const isOpen = details.classList.contains('open');
+    if (isOpen) {
+      details.classList.remove('open');
+      if (arrow) arrow.classList.remove('open');
+    } else {
+      // close other open details to keep UI tidy
+      document.querySelectorAll('.exercise-details.open').forEach(d => d.classList.remove('open'));
+      document.querySelectorAll('.exercise-arrow.open').forEach(a => a.classList.remove('open'));
+      details.classList.add('open');
+      if (arrow) arrow.classList.add('open');
+      if (exObj) renderExerciseDetails(exObj);
+    }
+  }
+
+  // modal helpers
+  function openModal(html) {
+    const modal = document.getElementById('modal');
+    const modalContent = document.getElementById('modalContent');
+    if (!modal || !modalContent) return;
+    modalContent.innerHTML = html;
+    modal.classList.add('active');
+    modal.setAttribute('aria-hidden','false');
+    const overlay = document.getElementById('modalOverlay');
+    if (overlay) overlay.onclick = closeModal;
+  }
+  function closeModal() {
+    const modal = document.getElementById('modal');
+    if (!modal) return;
+    modal.classList.remove('active');
+    modal.setAttribute('aria-hidden','true');
+  }
+
+  // modify weight
+  function modifyWeight(name) {
+    const curr = state.weights[name] || 0;
+    const html = '<h3 style="font-weight:700;margin-bottom:12px;color:var(--accent)">Modifier poids — ' + name + '</h3>' +
+      '<div style="margin-bottom:12px"><label class="input-label">Poids par défaut (kg)</label>' +
+      '<input id="modalWeightInput" type="number" value="' + curr + '" class="set-input" step="0.5"></div>' +
+      '<div style="display:flex;gap:8px"><button class="btn-secondary" onclick="closeModal()">Annuler</button>' +
+      '<button class="btn-save" id="modalSaveWeight">Enregistrer</button></div>';
+    openModal(html);
+    setTimeout(() => {
+      const modalSave = document.getElementById('modalSaveWeight');
+      if (modalSave) modalSave.addEventListener('click', function() {
+        const input = document.getElementById('modalWeightInput');
+        if (!input) return;
+        const v = parseFloat(input.value);
+        if (isNaN(v) || v < 0) { alert('Poids invalide'); return; }
+        state.weights[name] = v;
+        saveState();
+        closeModal();
+        if (currentSessionKey) openSession(currentSessionKey);
+        renderProgramList();
+        showQuickMsg('Poids mis à jour');
+      });
+    }, 0);
+  }
+
+  // save performance
+  function savePerf(name) {
+    // name passed either encoded or not; accept both
+    const exName = (typeof name === 'string') ? decodeURIComponent(name) : name;
+    const exId = exName.replace(/[^a-zA-Z0-9]/g, '');
+    const session = state.program[currentSessionKey];
+    if (!session) { showQuickMsg('Session introuvable', '#ef4444'); return; }
+    const ex = session.exercises.find(e => e.name === exName);
+    if (!ex) { showQuickMsg('Exercice introuvable', '#ef4444'); return; }
+
+    let firstWeight = null;
+    let firstReps = null;
+    let totalWeight = 0, totalReps = 0, count = 0;
+
+    for (let i = 1; i <= ex.sets; i++) {
+      const wEl = document.querySelector('.w-' + exId + '-' + i);
+      const rEl = document.querySelector('.r-' + exId + '-' + i);
+      if (wEl && rEl) {
+        const wv = parseFloat(wEl.value);
+        const rv = parseInt(rEl.value, 10);
+        if (!isNaN(wv) && !isNaN(rv)) {
+          if (firstWeight === null) firstWeight = wv;
+          if (firstReps === null) firstReps = rv;
+          totalWeight += wv;
+          totalReps += rv;
+          count++;
+        }
+      }
+    }
+
+    if (count === 0) {
+      // fallback to default weight and reps if present
+      if (firstWeight === null) firstWeight = state.weights[exName] || ex.weight || 0;
+      if (firstReps === null) {
+        if (typeof ex.reps === 'number') firstReps = ex.reps;
+        else firstReps = parseInt(String(ex.reps).split('-')[0], 10) || 0;
+      }
+    }
+
+    // Use averages if we have multiple sets recorded
+    const savedWeight = (count > 0) ? (totalWeight / count) : firstWeight;
+    const savedReps = (count > 0) ? Math.round(totalReps / count) : firstReps;
+
+    if (!state.hist[exName]) state.hist[exName] = [];
+    state.hist[exName].push({
+      week: state.week,
+      date: (new Date()).toISOString(),
+      weight: Number(savedWeight),
+      reps: Number(savedReps)
+    });
+    // update default weight
+    state.weights[exName] = Number(savedWeight);
+    saveState();
+    showQuickMsg('✅ Performance sauvegardée');
+
+    // refresh session UI
+    if (currentSessionKey) openSession(currentSessionKey);
+  }
+
+  // timer
+  function updateTimerUI() {
+    const restEl = document.getElementById('restTimer');
+    const txt = document.getElementById('timerText');
+    const circle = document.getElementById('timerProgressCircle');
+    if (!restEl || !txt || !circle) return;
+    if (timerRemainingSec <= 0) {
+      restEl.classList.remove('visible');
+      restEl.setAttribute('aria-hidden','true');
+      txt.textContent = '0:00';
+      circle.style.strokeDashoffset = 226;
+      return;
+    }
+    restEl.classList.add('visible');
+    restEl.setAttribute('aria-hidden','false');
+    const mm = Math.floor(timerRemainingSec / 60);
+    const ss = timerRemainingSec % 60;
+    txt.textContent = mm + ':' + (ss < 10 ? '0' + ss : ss);
+    const ratio = Math.max(0, timerRemainingSec) / Math.max(1, timerTotalSec);
+    circle.style.strokeDashoffset = 226 * ratio;
+  }
+
+  function startTimer(seconds, nextText) {
+    stopTimer();
+    timerTotalSec = Math.max(1, Math.floor(seconds));
+    timerRemainingSec = timerTotalSec;
+    const nextName = document.getElementById('nextExerciseName');
+    if (nextName) nextName.textContent = nextText || 'Repos';
+    updateTimerUI();
+    timerInterval = setInterval(function() {
+      timerRemainingSec--;
+      if (timerRemainingSec <= 0) {
+        stopTimer();
+        showQuickMsg('⏱️ Repos terminé', '#f59e0b');
+        if (navigator.vibrate) navigator.vibrate([50,20,50]);
+      }
+      updateTimerUI();
+    }, 1000);
+  }
+  function stopTimer() {
+    if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+    timerRemainingSec = 0;
+    timerTotalSec = 0;
+    updateTimerUI();
+  }
+  document.getElementById('skipTimerBtn').addEventListener('click', function() {
+    stopTimer();
+    showQuickMsg('⏭️ Repos ignoré', '#f59e0b');
+  });
+
+  // muscle analysis (modal)
+  function showMuscleAnalysis() {
+    let muscleWorkload = {};
+    let sessionMuscles = {};
+    Object.values(state.program).forEach(session => {
+      session.exercises.forEach(ex => {
+        const muscleData = MUSCLE_MAPPING[ex.name];
+        if (!muscleData) return;
+        if (!sessionMuscles[session.key]) sessionMuscles[session.key] = { primary: [], secondary: [], tertiary: [] };
+        muscleData.primary.forEach(m => {
+          muscleWorkload[m] = (muscleWorkload[m] || 0) + 3;
+          if (sessionMuscles[session.key].primary.indexOf(m) === -1) sessionMuscles[session.key].primary.push(m);
+        });
+        muscleData.secondary.forEach(m => {
+          muscleWorkload[m] = (muscleWorkload[m] || 0) + 2;
+          if (sessionMuscles[session.key].secondary.indexOf(m) === -1) sessionMuscles[session.key].secondary.push(m);
+        });
+        muscleData.tertiary.forEach(m => {
+          muscleWorkload[m] = (muscleWorkload[m] || 0) + 1;
+          if (sessionMuscles[session.key].tertiary.indexOf(m) === -1) sessionMuscles[session.key].tertiary.push(m);
+        });
+      });
+    });
+
+    let html = '<h3 style="font-weight:700;margin-bottom:20px;color:var(--accent);font-size:20px">💪 Analyse Musculaire</h3>';
+    html += '<div class="muscle-stats">';
+    html += '<div class="muscle-stat-card"><div class="muscle-stat-value">' + Object.keys(muscleWorkload).length + '</div><div class="muscle-stat-label">Muscles sollicités</div></div>';
+    const totalLoad = Object.values(muscleWorkload).reduce((a,b)=>a+b,0);
+    html += '<div class="muscle-stat-card"><div class="muscle-stat-value">' + totalLoad + '</div><div class="muscle-stat-label">Charge totale</div></div>';
+    html += '</div>';
+
+    html += '<div style="margin:20px 0"><div style="font-weight:600;margin-bottom:12px;color:var(--text-primary)">Charge par muscle:</div>';
+    Object.entries(muscleWorkload).sort((a,b)=>b[1]-a[1]).forEach(entry => {
+      const muscle = entry[0], load = entry[1];
+      let intensityClass = 'muscle-primary';
+      if (load <= 2) intensityClass = 'muscle-tertiary';
+      else if (load <= 5) intensityClass = 'muscle-secondary';
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:var(--bg-card-light);border-radius:8px;margin-bottom:6px">';
+      html += '<span>' + muscle + '</span>';
+      html += '<span class="muscle-tag ' + intensityClass + '">' + load + ' pts</span>';
+      html += '</div>';
+    });
+    html += '</div>';
+
+    html += '<div style="margin:20px 0"><div style="font-weight:600;margin-bottom:12px;color:var(--text-primary)">Muscles par séance:</div>';
+    Object.entries(sessionMuscles).forEach(entry => {
+      const sessionKey = entry[0], muscles = entry[1];
+      const session = state.program[sessionKey];
+      html += '<div style="margin-bottom:16px;padding:12px;background:var(--bg-card);border-radius:10px;border:1px solid var(--border)">';
+      html += '<div style="font-weight:600;margin-bottom:8px;color:var(--accent)">' + (session ? session.title : sessionKey) + '</div>';
+      html += '<div class="muscle-groups">';
+      muscles.primary.forEach(m => html += '<span class="muscle-tag muscle-primary">⭐ ' + m + '</span>');
+      muscles.secondary.forEach(m => html += '<span class="muscle-tag muscle-secondary">↗️ ' + m + '</span>');
+      muscles.tertiary.forEach(m => html += '<span class="muscle-tag muscle-tertiary">↘️ ' + m + '</span>');
+      html += '</div></div>';
+    });
+    html += '</div>';
+    html += '<button class="btn-save" onclick="closeModal()" style="width:100%;padding:16px">Fermer</button>';
+    openModal(html);
+  }
+
+  // export / backup
+  function cloudBackup() {
+    try {
+      const payload = JSON.stringify(state, null, 2);
+      const blob = new Blob([payload], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'hm51-backup-' + (new Date()).toISOString().slice(0,10) + '.json';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      showQuickMsg('Backup téléchargé ✔️');
+    } catch (e) { console.error(e); showQuickMsg('Erreur backup', '#ef4444'); }
+  }
+  document.getElementById('cloudBackupBtn').addEventListener('click', cloudBackup);
+
+  function exportWeights() {
+    try {
+      let csv = 'exercise,weight\n';
+      Object.entries(state.weights).forEach(entry => csv += '"' + entry[0].replace(/"/g,'""') + '",' + entry[1] + '\n');
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'hm51-weights-' + (new Date()).toISOString().slice(0,10) + '.csv';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      showQuickMsg('Export poids téléchargé ✔️');
+    } catch (e) { console.error(e); showQuickMsg('Erreur export', '#ef4444'); }
+  }
+  document.getElementById('exportWeights').addEventListener('click', exportWeights);
+
+  // volume stats (modal)
+  function viewVolumeStats() {
+    let html = '<h3 style="font-weight:700;margin-bottom:12px;color:var(--accent)">📊 Volume estimé</h3>';
+    let rows = '';
+    Object.values(state.program).forEach(session => {
+      session.exercises.forEach(ex => {
+        const w = state.weights[ex.name] || ex.weight || 0;
+        const reps = (typeof ex.reps === 'number') ? ex.reps : parseInt(String(ex.reps).split('-')[0],10) || 0;
+        const vol = w * reps * ex.sets;
+        rows += '<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.03)">' +
+          '<div><strong>' + ex.name + '</strong><div style="color:var(--text-secondary);font-size:12px">' + session.title + '</div></div>' +
+          '<div style="text-align:right"><div class="volume-badge">' + vol + ' kg</div><div style="font-size:12px;color:var(--text-secondary)">' + ex.sets + '×' + reps + '×' + w + '</div></div>' +
+          '</div>';
+      });
+    });
+    html += rows;
+    html += '<div style="margin-top:16px"><button class="btn-save" onclick="closeModal()">Fermer</button></div>';
+    openModal(html);
+  }
+  document.getElementById('openStats').addEventListener('click', function() { openStatsModal(); });
+
+  // reset
+  function resetApp() {
+    const ok = confirm('Réinitialiser toutes les données ? (localStorage sera vidé)');
+    if (!ok) return;
+    localStorage.removeItem(STATE_KEY);
+    localStorage.removeItem(LAST_SESSION_KEY);
+    state = defaultState();
+    saveState();
+    renderHeader();
+    renderProgramList();
+    showQuickMsg('Application réinitialisée', '#ef4444');
+  }
+  document.getElementById('resetApp').addEventListener('click', resetApp);
+
+  // nav controls
+  document.getElementById('prevWeek').addEventListener('click', function() {
+    state.week = Math.max(1, state.week - 1); saveState(); renderHeader(); showQuickMsg('Semaine ' + state.week);
+  });
+  document.getElementById('advanceWeek').addEventListener('click', function() {
+    state.week = state.week + 1; saveState(); renderHeader(); showQuickMsg('Semaine ' + state.week);
+  });
+  document.getElementById('backHomeBtn').addEventListener('click', function() { backHome(); });
+
+  // modal ESC close
+  document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeModal(); });
+
+  // expose backHome
+  window.backHome = function() { showScreen('home'); renderHeader(); renderProgramList(); };
+
+  // -------- STATISTICS GRAPH (CANVAS) ----------
+  // Build modal HTML and draw canvas for selected exercise
+  function openStatsModal() {
+    // Build the HTML with select + canvas
+    const exercises = Object.keys(state.weights).sort();
+    let selectorHtml = '<label style="font-weight:700;margin-bottom:8px;display:block;color:var(--text-secondary)">Choisir un exercice</label>';
+    selectorHtml += '<select id="statsExerciseSelect" class="set-input" style="width:100%;margin-bottom:12px">';
+    selectorHtml += '<option value="">-- Choisir --</option>';
+    exercises.forEach(ex => {
+      selectorHtml += '<option value="' + encodeURIComponent(ex) + '">' + ex + '</option>';
+    });
+    selectorHtml += '</select>';
+
+    const html = '<h3 style="font-weight:700;margin-bottom:12px;color:var(--accent)">📈 Statistiques — Évolution Poids</h3>' +
+      selectorHtml +
+      '<div class="canvas-wrap"><canvas id="statsCanvas" width="700" height="380" style="width:100%;max-height:380px"></canvas></div>' +
+      '<div style="display:flex;gap:8px;margin-top:12px"><button class="btn-secondary" id="downloadChart">Télécharger</button><button class="btn-save" id="closeStatsBtn">Fermer</button></div>';
+    openModal(html);
+
+    // after modal rendered, attach events
+    setTimeout(() => {
+      const sel = document.getElementById('statsExerciseSelect');
+      const canvas = document.getElementById('statsCanvas');
+      const closeBtn = document.getElementById('closeStatsBtn');
+      const dlBtn = document.getElementById('downloadChart');
+
+      if (sel) {
+        sel.addEventListener('change', function() {
+          const exName = decodeURIComponent(this.value || '');
+          if (!exName) {
+            clearCanvas(canvas);
+            return;
+          }
+          const data = buildSeriesForExercise(exName);
+          drawLineChart(canvas, data.labels, data.values, exName);
+        });
+      }
+
+      if (closeBtn) closeBtn.addEventListener('click', closeModal);
+      if (dlBtn) dlBtn.addEventListener('click', function() {
+        if (!canvas) return;
+        const url = canvas.toDataURL('image/png');
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'hm51-stats-' + (new Date()).toISOString().slice(0,10) + '.png';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      });
+    }, 0);
+  }
+
+  // build series: returns labels array and numeric values array
+  function buildSeriesForExercise(exName) {
+    const hist = (state.hist[exName] || []).slice();
+    // sort by date
+    hist.sort((a,b) => new Date(a.date) - new Date(b.date));
+    // reduce by day: compute average if multiple records same day
+    const grouped = {};
+    hist.forEach(item => {
+      const day = (new Date(item.date)).toISOString().slice(0,10);
+      if (!grouped[day]) grouped[day] = { sum: 0, count: 0 };
+      grouped[day].sum += Number(item.weight || 0);
+      grouped[day].count += 1;
+    });
+    const labels = Object.keys(grouped).sort();
+    const values = labels.map(d => +(grouped[d].sum / grouped[d].count).toFixed(2));
+    // if no history, create single point with current default weight
+    if (labels.length === 0) {
+      const cur = state.weights[exName] || 0;
+      return { labels: ['Now'], values: [Number(cur)] };
+    }
+    return { labels, values };
+  }
+
+  // clear canvas
+  function clearCanvas(canvas) {
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0,0,canvas.width, canvas.height);
+    // draw empty hint
+    ctx.fillStyle = 'rgba(255,255,255,0.06)';
+    ctx.fillRect(0,0,canvas.width, canvas.height);
+    ctx.fillStyle = 'var(--text-secondary)';
+    ctx.font = '14px system-ui';
+    ctx.textAlign = 'center';
+    ctx.fillText('Choisir un exercice pour afficher le graphique', canvas.width/2, canvas.height/2);
+  }
+
+  // draw simple nice line chart
+  function drawLineChart(canvas, labels, values, title) {
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const DPR = window.devicePixelRatio || 1;
+    // resize high DPI
+    const CSS_WIDTH = canvas.clientWidth;
+    const CSS_HEIGHT = 380;
+    canvas.width = Math.round(CSS_WIDTH * DPR);
+    canvas.height = Math.round(CSS_HEIGHT * DPR);
+    ctx.scale(DPR, DPR);
+
+    // clear background
+    ctx.clearRect(0,0,CSS_WIDTH,CSS_HEIGHT);
+    // background card
+    ctx.fillStyle = '#0f1724';
+    ctx.fillRect(0,0,CSS_WIDTH,CSS_HEIGHT);
+
+    // margins
+    const margin = { top: 36, right: 28, bottom: 48, left: 56 };
+    const w = CSS_WIDTH - margin.left - margin.right;
+    const h = CSS_HEIGHT - margin.top - margin.bottom;
+
+    // axes
+    const max = Math.max(...values) * 1.15 || 10;
+    const min = Math.min(...values) * 0.9 || 0;
+    const range = Math.max(1, max - min);
+
+    // y grid lines
+    ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+    ctx.lineWidth = 1;
+    const gridCount = 4;
+    ctx.beginPath();
+    for (let i=0;i<=gridCount;i++){
+      const y = margin.top + (h * i / gridCount);
+      ctx.moveTo(margin.left, y);
+      ctx.lineTo(margin.left + w, y);
+    }
+    ctx.stroke();
+
+    // y labels
+    ctx.fillStyle = 'rgba(255,255,255,0.65)';
+    ctx.font = '12px system-ui';
+    ctx.textAlign = 'right';
+    for (let i=0;i<=gridCount;i++){
+      const val = (max - (range * i / gridCount));
+      const y = margin.top + (h * i / gridCount);
+      ctx.fillText(Math.round(val*100)/100 + ' kg', margin.left - 8, y + 4);
+    }
+
+    // x labels
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.font = '12px system-ui';
+    const stepX = labels.length > 1 ? w / (labels.length - 1) : w;
+    labels.forEach((lab,i) => {
+      const x = margin.left + i * stepX;
+      const y = margin.top + h + 18;
+      const short = (lab === 'Now') ? lab : lab.replace(/^\d{4}-(\d{2}-\d{2})$/,'$1');
+      ctx.fillText(short, x, y);
+    });
+
+    // line points coordinates
+    const points = values.map((v,i) => {
+      const x = margin.left + (labels.length > 1 ? (i * stepX) : (w/2));
+      const y = margin.top + ((max - v) / range) * h;
+      return {x,y};
+    });
+
+    // gradient for line
+    const grd = ctx.createLinearGradient(margin.left,0, margin.left+w,0);
+    grd.addColorStop(0, 'rgba(245,158,11,0.9)');
+    grd.addColorStop(1, 'rgba(139,92,246,0.9)');
+
+    // draw area under line
+    ctx.beginPath();
+    points.forEach((p,i) => (i===0?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y)));
+    ctx.lineTo(margin.left + w, margin.top + h);
+    ctx.lineTo(margin.left, margin.top + h);
+    ctx.closePath();
+    const areaGrd = ctx.createLinearGradient(0, margin.top, 0, margin.top+h);
+    areaGrd.addColorStop(0, 'rgba(245,158,11,0.18)');
+    areaGrd.addColorStop(1, 'rgba(139,92,246,0.05)');
+    ctx.fillStyle = areaGrd;
+    ctx.fill();
+
+    // draw line
+    ctx.beginPath();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = grd;
+    points.forEach((p,i) => (i===0?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y)));
+    ctx.stroke();
+
+    // draw points
+    points.forEach(p => {
+      ctx.beginPath();
+      ctx.fillStyle = '#0a0e17';
+      ctx.arc(p.x, p.y, 6, 0, Math.PI*2);
+      ctx.fill();
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    });
+
+    // title
+    ctx.fillStyle = 'white';
+    ctx.font = '16px system-ui';
+    ctx.textAlign = 'left';
+    ctx.fillText(title, margin.left, 20);
+  }
+
+  // ---------- init ----------
+  state = loadState();
+  renderHeader();
+  renderProgramList();
+
+  // expose functions needed by inline handlers or modal callbacks
+  window.openSession = openSession;
+  window.backHome = window.backHome;
+  window.savePerf = savePerf;
+  window.modifyWeight = modifyWeight;
+  window.closeModal = closeModal;
+  window.showMuscleAnalysis = showMuscleAnalysis;
+  window.viewVolumeStats = viewVolumeStats;
+  window.cloudBackup = cloudBackup;
+  window.exportWeights = exportWeights;
+  window.startTimer = startTimer;
+  window.stopTimer = stopTimer;
+  window.openModal = openModal;
+  window.openStatsModal = openStatsModal;
+
+  // ensure progList clickable: already handled
 });
-});
-return {
-week: 1,
-weights: weights,
-hist: {},
-program: JSON.parse(JSON.stringify(PROGRAM)),
-customExercises: []
-};
-}
-
-function loadState() {
-try {
-const raw = localStorage.getItem(STATE_KEY);
-if (raw) {
-const loaded = JSON.parse(raw);
-if (!loaded.customExercises) loaded.customExercises = [];
-return loaded;
-}
-} catch (e) {
-console.error('Erreur localStorage:', e);
-}
-return defaultState();
-}
-
-function saveState() {
-try {
-localStorage.setItem(STATE_KEY, JSON.stringify(state));
-} catch (e) {
-console.error('Erreur sauvegarde:', e);
-}
-}
-
-function showScreen(id) {
-document.querySelectorAll(".screen").forEach(function(s) {
-s.classList.remove("active");
-});
-const screen = document.getElementById(id);
-if (screen) screen.classList.add("active");
-}
-
-function showQuickMsg(msg) {
-const el = document.getElementById('quickMsg');
-if (!el) return;
-el.textContent = msg;
-el.style.color = '#10b981';
-setTimeout(function() { 
-el.textContent = 'Prêt.'; 
-el.style.color = ''; 
-}, 3000);
-}
-
-function getBlockInfo(week) {
-if (week <= 5) return { name: 'Bloc 1 - Fondation', tech: 'Tempo contrôlé' };
-if (week <= 11) return { name: 'Bloc 2 - Surcharge', tech: 'Rest-Pause' };
-return { name: 'Bloc 3 - Intensification', tech: 'Drop-sets + Myo-reps' };
-}
-
-function getLastPerformance(exName) {
-const hist = state.hist[exName];
-if (!hist || hist.length === 0) return null;
-return hist[hist.length - 1];
-}
-
-function renderHeader() {
-const weekDisplay = document.getElementById('weekDisplay');
-const blockName = document.getElementById('blockName');
-if (weekDisplay) weekDisplay.textContent = state.week;
-const block = getBlockInfo(state.week);
-if (blockName) blockName.textContent = block.name;
-}
-
-function renderProgramList() {
-const progList = document.getElementById('progList');
-if (!progList) return;
-
-// Quick Start Button
-const lastSession = localStorage.getItem(LAST_SESSION_KEY);
-const quickBtn = document.createElement('button');
-quickBtn.className = 'quick-session-btn';
-quickBtn.innerHTML = '<div style="font-size:18px;font-weight:700;margin-bottom:8px">⚡ Reprise Rapide</div>' +
-'<div style="font-size:14px;opacity:0.9">Dernière séance • 1 tap</div>';
-quickBtn.onclick = function() { 
-if (lastSession) {
-openSession(lastSession);
-showQuickMsg('⚡ Séance reprise !');
-} else {
-showQuickMsg('📝 Aucune séance récente');
-}
-};
-progList.appendChild(quickBtn);
-
-// Sessions normales
-Object.values(state.program).forEach(function(s) {
-const btn = document.createElement('button');
-btn.className = 'session-btn';
-const exCount = s.exercises.length;
-const totalSets = s.exercises.reduce(function(sum, ex) { return sum + ex.sets; }, 0);
-btn.innerHTML = '<div style="font-size:18px;font-weight:700;margin-bottom:8px">' + s.title + '</div>' +
-'<div style="font-size:14px;opacity:0.9">' + exCount + ' exercices • ' + totalSets + ' séries</div>';
-btn.onclick = function() { openSession(s.key); };
-progList.appendChild(btn);
-});
-}
-
-window.backHome = function() {
-showScreen("home");
-renderHeader();
-renderProgramList();
-};
-
-function openSession(key) {
-currentSessionKey = key;
-try {
-localStorage.setItem(LAST_SESSION_KEY, key);
-} catch(e) { console.error('Erreur last session:', e); }
-showScreen('session');
-const sessionTitle = document.getElementById('sessionTitle');
-if (sessionTitle) sessionTitle.textContent = state.program[key].title;
-const list = document.getElementById('exerciseList');
-if (!list) return;
-list.innerHTML = '';
-state.program[key].exercises.forEach(function(ex) {
-const w = state.weights[ex.name] || ex.weight;
-const exId = ex.name.replace(/[^a-zA-Z0-9]/g, '');
-const lastPerf = getLastPerformance(ex.name);
-let perfBadge = '';
-if (lastPerf) {
-perfBadge = '<div style="font-size:13px;color:#10b981;margin-top:4px">📊 Dernier: ' + lastPerf.weight + 'kg × ' + lastPerf.reps + ' reps</div>';
-}
-
-// Ajout des muscles travaillés
-const muscleData = MUSCLE_MAPPING[ex.name] || { primary: [], secondary: [], tertiary: [] };
-let muscleBadge = '';
-if (muscleData.primary.length > 0) {
-muscleBadge = '<div class="muscle-groups">';
-muscleData.primary.forEach(function(muscle) {
-muscleBadge += '<span class="muscle-tag muscle-primary">' + muscle + '</span>';
-});
-muscleData.secondary.forEach(function(muscle) {
-muscleBadge += '<span class="muscle-tag muscle-secondary">' + muscle + '</span>';
-});
-muscleData.tertiary.forEach(function(muscle) {
-muscleBadge += '<span class="muscle-tag muscle-tertiary">' + muscle + '</span>';
-});
-muscleBadge += '</div>';
-}
-
-const card = document.createElement('div');
-card.className = 'exercise-card';
-card.innerHTML = '<div class="exercise-header" onclick="toggleExerciseDetails(\'' + exId + '\')">' +
-'<div style="flex:1">' +
-'<div class="exercise-name">' + ex.name + '</div>' +
-'<div class="exercise-meta">' + ex.sets + ' séries × ' + ex.reps + ' reps • ' + ex.rest + 's repos • ' + w + 'kg</div>' +
-muscleBadge +
-perfBadge +
-'</div>' +
-'<div class="exercise-arrow" id="arrow-' + exId + '">▼</div>' +
-'</div>' +
-'<div class="exercise-details" id="details-' + exId + '"></div>';
-list.appendChild(card);
-});
-}
-
-// ... (le reste du code reste identique jusqu'à la fonction renderExerciseDetails)
-
-function renderExerciseDetails(ex) {
-const exId = ex.name.replace(/[^a-zA-Z0-9]/g, '');
-const details = document.getElementById('details-' + exId);
-if (!details) return;
-const w = state.weights[ex.name] || ex.weight;
-const lastPerf = getLastPerformance(ex.name);
-let techBanner = ex.tech;
-if (state.week > 5 && state.week <= 11) {
-techBanner = ex.tech + ' + Rest-Pause (dernière série)';
-} else if (state.week > 11) {
-techBanner = ex.tech + ' + Drop-sets + Myo-reps';
-}
-
-let perfMsg = '';
-if (lastPerf) {
-perfMsg = '<div style="background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.3);color:#10b981;padding:12px 16px;border-radius:10px;margin-bottom:16px;font-size:14px;font-weight:600">' +
-'📊 Dernière fois : ' + lastPerf.weight + 'kg × ' + lastPerf.reps +
-' reps (Semaine ' + lastPerf.week + ')' +
-'</div>';
-} else {
-perfMsg = '<div style="background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);color:var(--accent);padding:12px 16px;border-radius:10px;margin-bottom:16px;font-size:14px;font-weight:600">' +
-'⭐ Première fois pour cet exercice !' +
-'</div>';
-}
-
-// Ajout de l'anatomie musculaire
-const muscleData = MUSCLE_MAPPING[ex.name] || { primary: [], secondary: [], tertiary: [] };
-let muscleSection = '';
-if (muscleData.primary.length > 0) {
-muscleSection = '<div style="margin:20px 0;padding:16px;background:var(--bg-card);border-radius:12px;border:1px solid var(--border)">' +
-'<div style="font-weight:700;margin-bottom:12px;color:var(--accent)">💪 Muscles Sollicités</div>' +
-'<div class="muscle-groups">';
-muscleData.primary.forEach(function(muscle) {
-muscleSection += '<span class="muscle-tag muscle-primary">⭐ ' + muscle + '</span>';
-});
-muscleData.secondary.forEach(function(muscle) {
-muscleSection += '<span class="muscle-tag muscle-secondary">↗️ ' + muscle + '</span>';
-});
-muscleData.tertiary.forEach(function(muscle) {
-muscleSection += '<span class="muscle-tag muscle-tertiary">↘️ ' + muscle + '</span>';
-});
-muscleSection += '</div></div>';
-}
-
-let setsHtml = '';
-for (let i = 1; i <= ex.sets; i++) {
-setsHtml += '<div class="set-row">' +
-'<div class="set-label">Série ' + i + '</div>' +
-'<div>' +
-'<label class="input-label">KG</label>' +
-'<input type="number" value="' + w + '" class="set-input w-' + exId + '-' + i + '" step="0.5" placeholder="Poids">' +
-'</div>' +
-'<div>' +
-'<label class="input-label">REPS</label>' +
-'<input type="number" value="' + ex.reps + '" class="set-input r-' + exId + '-' + i + '" placeholder="Reps">' +
-'</div>' +
-'<div>' +
-'<input type="checkbox" id="s-' + i + '-' + exId + '" class="set-checkbox">' +
-'<label for="s-' + i + '-' + exId + '"></label>' +
-'</div>' +
-'</div>';
-}
-
-details.innerHTML = '<div class="technique-banner">✨ ' + techBanner + '</div>' +
-perfMsg +
-muscleSection +
-setsHtml +
-'<div class="exercise-actions">' +
-'<button class="btn-secondary" onclick="modifyWeight(\'' + ex.name + '\')">✏️ Modifier Poids</button>' +
-'<button class="btn-save" onclick="savePerf(\'' + ex.name + '\')">💾 Enregistrer & Valider</button>' +
-'</div>';
-
-document.querySelectorAll('#details-' + exId + ' .set-checkbox').forEach(function(cb, idx) {
-cb.addEventListener('change', function() {
-if (this.checked) {
-// Haptic feedback
-if (navigator.vibrate) navigator.vibrate(50);
-const isLast = idx === ex.sets - 1;
-const nextText = isLast ? "Prochain exercice" : "Repos";
-startTimer(ex.rest, nextText);
-}
-});
-});
-}
-
-// FONCTION D'ANALYSE MUSCULAIRE
-window.showMuscleAnalysis = function() {
-let muscleWorkload = {};
-let sessionMuscles = {};
-
-// Analyser la semaine actuelle
-Object.values(state.program).forEach(function(session) {
-session.exercises.forEach(function(ex) {
-const muscleData = MUSCLE_MAPPING[ex.name];
-if (muscleData) {
-if (!sessionMuscles[session.key]) {
-sessionMuscles[session.key] = { primary: [], secondary: [], tertiary: [] };
-}
-// Compter les muscles par session
-muscleData.primary.forEach(function(muscle) {
-if (!muscleWorkload[muscle]) muscleWorkload[muscle] = 0;
-muscleWorkload[muscle] += 3; // Primary = 3 points
-if (sessionMuscles[session.key].primary.indexOf(muscle) === -1) {
-sessionMuscles[session.key].primary.push(muscle);
-}
-});
-muscleData.secondary.forEach(function(muscle) {
-if (!muscleWorkload[muscle]) muscleWorkload[muscle] = 0;
-muscleWorkload[muscle] += 2; // Secondary = 2 points
-if (sessionMuscles[session.key].secondary.indexOf(muscle) === -1) {
-sessionMuscles[session.key].secondary.push(muscle);
-}
-});
-muscleData.tertiary.forEach(function(muscle) {
-if (!muscleWorkload[muscle]) muscleWorkload[muscle] = 0;
-muscleWorkload[muscle] += 1; // Tertiary = 1 point
-if (sessionMuscles[session.key].tertiary.indexOf(muscle) === -1) {
-sessionMuscles[session.key].tertiary.push(muscle);
-}
-});
-}
-});
-});
-
-let html = '<h3 style="font-weight:700;margin-bottom:20px;color:var(--accent);font-size:20px">💪 Analyse Musculaire</h3>';
-
-// Stats globales
-html += '<div class="muscle-stats">';
-html += '<div class="muscle-stat-card">';
-html += '<div class="muscle-stat-value">' + Object.keys(muscleWorkload).length + '</div>';
-html += '<div class="muscle-stat-label">Muscles sollicités</div>';
-html += '</div>';
-html += '<div class="muscle-stat-card">';
-const totalLoad = Object.values(muscleWorkload).reduce(function(a, b) { return a + b; }, 0);
-html += '<div class="muscle-stat-value">' + totalLoad + '</div>';
-html += '<div class="muscle-stat-label">Charge totale</div>';
-html += '</div>';
-html += '</div>';
-
-// Détail par muscle
-html += '<div style="margin:20px 0">';
-html += '<div style="font-weight:600;margin-bottom:12px;color:var(--text-primary)">Charge par muscle:</div>';
-Object.entries(muscleWorkload).sort(function(a, b) { return b[1] - a[1]; }).forEach(function(entry) {
-const muscle = entry[0];
-const load = entry[1];
-let intensityClass = 'muscle-primary';
-if (load <= 2) intensityClass = 'muscle-tertiary';
-else if (load <= 5) intensityClass = 'muscle-secondary';
-html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:var(--bg-card-light);border-radius:8px;margin-bottom:6px">';
-html += '<span>' + muscle + '</span>';
-html += '<span class="muscle-tag ' + intensityClass + '">' + load + ' pts</span>';
-html += '</div>';
-});
-html += '</div>';
-
-// Analyse par séance
-html += '<div style="margin:20px 0">';
-html += '<div style="font-weight:600;margin-bottom:12px;color:var(--text-primary)">Muscles par séance:</div>';
-Object.entries(sessionMuscles).forEach(function(entry) {
-const sessionKey = entry[0];
-const muscles = entry[1];
-const session = state.program[sessionKey];
-html += '<div style="margin-bottom:16px;padding:12px;background:var(--bg-card);border-radius:10px;border:1px solid var(--border)">';
-html += '<div style="font-weight:600;margin-bottom:8px;color:var(--accent)">' + session.title + '</div>';
-html += '<div class="muscle-groups">';
-muscles.primary.forEach(function(muscle) {
-html += '<span class="muscle-tag muscle-primary">⭐ ' + muscle + '</span>';
-});
-muscles.secondary.forEach(function(muscle) {
-html += '<span class="muscle-tag muscle-secondary">↗️ ' + muscle + '</span>';
-});
-muscles.tertiary.forEach(function(muscle) {
-html += '<span class="muscle-tag muscle-tertiary">↘️ ' + muscle + '</span>';
-});
-html += '</div></div>';
-});
-html += '</div>';
-
-html += '<button class="btn-save" onclick="closeModal()" style="width:100%;padding:16px">Fermer</button>';
-openModal(html);
-};
-
-// ... (le reste des fonctions existantes reste identique)
-
-// INITIALISATION
-const muscleAnalysisBtn = document.getElementById('muscleAnalysisBtn');
-if (muscleAnalysisBtn) {
-muscleAnalysisBtn.addEventListener('click', window.showMuscleAnalysis);
-}
-
-state = loadState();
-renderHeader();
-renderProgramList();
-})();
-// === EXPOSE LES FONCTIONS GLOBALEMENT ===
-window.toggleExerciseDetails = toggleExerciseDetails;
-window.modifyWeight = modifyWeight;
-window.saveWeight = saveWeight;
-window.savePerf = savePerf;
-window.backHome = backHome;
-window.closeModal = closeModal;
-window.cloudBackup = cloudBackup;
-window.showMuscleAnalysis = showMuscleAnalysis;
-window.viewVolumeStats = viewVolumeStats;
 </script>
 </body>
 </html>
